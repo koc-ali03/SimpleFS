@@ -1,1 +1,4 @@
 *.obsolete
+*.o
+*.obj
+simplefs

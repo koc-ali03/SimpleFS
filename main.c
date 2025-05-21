@@ -3,6 +3,386 @@
 #include <string.h>
 #include <termios.h> // Terminal ayarları için
 #include <unistd.h>
+#include "fs.h"
+
+void clear_input_buffer();
+int wait_for_user_input();
+bool get_filename(const char* prompt, char* filename);
+
+int main() {
+    int choice;
+    bool is_first_run = 1; // İlk çalışma olup olmadığını kontrol etmek için boolean
+    char input[4];         // Kullanıcı girişini geçici olarak saklamak için
+    char filename[FILENAME_LEN];
+    char filename2[FILENAME_LEN];
+    char data[BLOCK_SIZE]; // Veri yazmak için kullanılacak buffer
+
+    do {
+        if (!is_first_run) { // Eğer ilk çalışma değilse
+            printf("\nDevam etmek icin lutfen bir tusa basin...");
+            wait_for_user_input(); // Herhangi bir tuşa basılmasını bekle
+            printf("\n");
+        } else if (fs_init() == false || log_init() == false) {
+            return -1;
+        }
+
+        system("clear");
+        printf("             Dosya Sistemi Menusu\n");
+        puts("==============================================");
+        printf(" 1. Dosya olustur\n");
+        printf(" 2. Dosya sil\n");
+        printf(" 3. Dosyaya veri yaz\n");
+        printf(" 4. Dosyadan veri oku\n");
+        printf(" 5. Dosyalari listele\n");
+        printf(" 6. Diske format at\n");
+        printf(" 7. Dosya ismini degistir\n");
+        printf(" 8. Dosya boyutunu goster\n");
+        printf(" 9. Dosya sonuna veri ekle\n");
+        printf("10. Dosyayi kirp\n");
+        printf("11. Dosya kopyala\n");
+        printf("12. Dosyayi tasi\n");
+        printf("13. Dosyalari karsilastir\n");
+        printf("14. Disk uzerindeki bos alanlari birlestir\n");
+        printf("15. Diski yedekle\n");
+        printf("16. Varolan disk yedegini geri yukle\n");
+        printf("17. Loglari Goruntule\n");
+        printf("18. Cikis\n");
+        puts("==============================================");
+        printf("Seciminizi girin(1-18): ");
+
+        // Kullanıcı girişini metin olarak al
+        if (fgets(input, sizeof(input), stdin) == NULL) {
+            system("clear");
+            return 0;
+        }
+
+        // fgets'in sonuna eklediği satır sonu karakterini kaldır
+        size_t len = strlen(input);
+        bool newline_found = 0;
+
+        if (len > 0 && input[len - 1] == '\n') {
+            input[len - 1] = '\0';
+            newline_found = 1; // Newline bulundu ve kaldırıldı
+        }
+
+        // Eğer newline bulunamazsa, giriş bufferında hala karakter var demektir
+        if (!newline_found) clear_input_buffer();
+
+        // Giriş sadece sayılardan mı oluşuyor kontrol et
+        bool is_valid = 1;
+        for (int i = 0; input[i] != '\0'; i++) {
+            if (input[i] < '0' || input[i] > '9') {
+                is_valid = 0;
+                break;
+            }
+        }
+
+        if (!is_valid) {
+            system("clear");
+            printf("Gecersiz secim. Lütfen sadece bir sayi girin.\n");
+            choice = 0;
+            is_first_run = 0;
+            continue;
+        }
+
+        // Geçerli bir sayı olduğu için şimdi int'e çevir
+        choice = atoi(input);
+        system("clear");
+
+        switch (choice) {
+            case 1: {
+                printf("Dosya olusturma secildi.\n");
+                fs_ls(false);
+
+                if (!get_filename("Dosya adini girin: ", filename)) break;
+
+                if (fs_create(filename) >= 0) {
+                    log_operation("DOSYA_OLUSTURULDU", filename);
+                    printf("\"%s\" dosyasi basariyla olusturuldu.\n", filename);
+                }
+
+                else
+                    printf("\"%s\" dosyasi olusturulamadi!\n", filename);
+
+                break;
+            }
+            case 2: {
+                printf("Dosya silme secildi.\n");
+                fs_ls(false);
+
+                if (!get_filename("Silinecek dosya adini girin: ", filename)) break;
+                if (fs_delete(filename) >= 0) {
+                    log_operation("DOSYA_SILINDI", filename);
+                    printf("\"%s\" dosyasi basariyla silindi.\n", filename);
+                } else
+                    printf("\"%s\" dosyasi silinemedi!\n", filename);
+
+                break;
+            }
+            case 3: {
+                printf("Dosyaya veri yazma secildi.\n");
+                fs_ls(false);
+
+                if (!get_filename("Veri yazilacak dosya adini girin: ", filename)) break;
+
+                printf("Yazilacak veriyi girin: ");
+                if (fgets(data, sizeof(data), stdin) == NULL) {
+                    printf("Veri okunamadi!\n");
+                    break;
+                }
+                size_t data_len = strlen(data);
+                if (data_len > 0 && data[data_len - 1] == '\n') data[data_len - 1] = '\0';
+
+                if (fs_write(filename, data, strlen(data)) >= 0) {
+                    log_operation("DOSYAYA_VERI_YAZILDI", filename);
+                    printf("\"%s\" dosyasina veri basariyla yazildi.\n", filename);
+                } else
+                    printf("\"%s\" dosyasina veri yazilamadi!\n", filename);
+
+                break;
+            }
+            case 4: {
+                printf("Dosyadan veri okuma secildi.\n");
+                fs_ls(false);
+
+                if (!get_filename("Okunacak dosya adini girin: ", filename)) break;
+
+                int file_size = fs_size(filename);
+                if (file_size < 0) {
+                    printf("\"%s\" dosyasi bulunamadi!\n", filename);
+                    break;
+                }
+
+                printf("Okuma secenegi:\n");
+                printf("1. Tum dosyayi oku\n");
+                printf("2. Belirli bir bolumu oku\n");
+                printf("Seciminiz (1-2): ");
+
+                if (fgets(input, sizeof(input), stdin) == NULL) {
+                    printf("Secim okunamadi!\n");
+                    break;
+                }
+
+                int read_choice = atoi(input);
+
+                if (read_choice == 1) {
+                    // Tüm dosyayı oku
+                    if (fs_cat(filename) >= 0) {
+                        log_operation("DOSYADAN_VERI_OKUNDU", filename);
+                    } else {
+                        printf("\"%s\" dosyasindan veri okunamadi!\n", filename);
+                    }
+                } else if (read_choice == 2) {
+                    // Belirli bir bölümü oku
+                    char buffer[BLOCK_SIZE] = {0};
+                    printf("Okuma baslangic pozisyonu (0-%d): ", file_size - 1);
+                    if (fgets(input, sizeof(input), stdin) == NULL) {
+                        printf("Pozisyon okunamadi!\n");
+                        break;
+                    }
+                    int offset = atoi(input);
+
+                    printf("Kac byte okumak istiyorsunuz: ");
+                    if (fgets(input, sizeof(input), stdin) == NULL) {
+                        printf("Okunacak boyut okunamadi!\n");
+                        break;
+                    }
+                    int read_size = atoi(input);
+
+                    // Geçerli değer kontrolü
+                    if (offset < 0 || read_size <= 0 || offset + read_size > file_size) {
+                        printf("Gecersiz okuma parametreleri!\n");
+                        break;
+                    }
+
+                    if (fs_read(filename, offset, read_size, buffer) >= 0) {
+                        log_operation("DOSYADAN_VERI_OKUNDU", filename);
+                        printf("\"%s\" dosyasindan okunan veri (%d byte):\n", filename, read_size);
+                        printf("-------------------------------------------\n");
+                        for (int i = 0; i < read_size; i++) {
+                            putchar(buffer[i]);
+                        }
+                        printf("\n-------------------------------------------\n");
+                    } else {
+                        printf("\"%s\" dosyasindan veri okunamadi!\n", filename);
+                    }
+                } else {
+                    printf("Gecersiz secim!\n");
+                }
+                break;
+            }
+            case 5: {
+                printf("Dosyaları listeleme secildi.\n");
+                log_operation("DOSYALAR_LISTELENDI", NULL);
+                fs_ls(true);
+                break;
+            }
+            case 6: {
+                printf("Diske format atma secildi.\n");
+                if (fs_format() >= 0) {
+                    log_operation("DISK_FORMATLANDI", NULL);
+                    printf("Disk basariyla formatlandi.\n");
+                } else
+                    printf("Disk formatlama basarisiz oldu!\n");
+                break;
+            }
+            case 7: {
+                printf("Dosya ismini degistirme secildi.\n");
+                fs_ls(false);
+
+                if (!get_filename("Eski dosya adini girin: ", filename)) break;
+                if (!get_filename("Yeni dosya adini girin: ", filename2)) break;
+                if (fs_rename(filename, filename2) >= 0) {
+                    log_operation("DOSYA_ISMI_DEGISTIRILDI", filename);
+                    printf("\"%s\" dosyasinin ismi \"%s\" olarak basariyla degistirildi.\n", filename, filename2);
+                } else
+                    printf("\"%s\" dosyasinin ismi degistirilemedi!\n", filename);
+                break;
+            }
+            case 8: {
+                printf("Dosya boyutunu gosterme secildi.\n");
+                fs_ls(false);
+
+                if (!get_filename("Boyutunu gormek istediginiz dosya adini girin: ", filename)) break;
+                int size = fs_size(filename);
+                if (size >= 0) {
+                    log_operation("DOSYA_BOYUTU_GOSTERILDI", filename);
+                    printf("\"%s\" dosyasinin boyutu: %d byte\n", filename, size);
+                } else
+                    printf("\"%s\" dosyasi bulunamadi!\n", filename);
+                break;
+            }
+            case 9: {
+                printf("Dosya sonuna veri ekleme secildi.\n");
+                fs_ls(false);
+
+                if (!get_filename("Veri eklenecek dosya adini girin: ", filename)) break;
+
+                printf("Eklenecek veriyi girin: ");
+                if (fgets(data, sizeof(data), stdin) == NULL) {
+                    printf("Veri okunamadi!\n");
+                    break;
+                }
+
+                size_t data_len = strlen(data);
+                if (data_len > 0 && data[data_len - 1] == '\n') data[data_len - 1] = '\0';
+
+                if (fs_append(filename, data, strlen(data)) >= 0) {
+                    log_operation("DOSYAYA_VERI_EKLENDI", filename);
+                    printf("\"%s\" dosyasina veri basariyla eklendi.\n", filename);
+                } else
+                    printf("\"%s\" dosyasina veri eklenemedi!\n", filename);
+
+                break;
+            }
+            case 10: {
+                printf("Dosya kirpma secildi\n");
+                fs_ls(false);
+
+                if (!get_filename("Kirpma yapilacak dosya adini girin: ", filename)) break;
+                printf("Yeni boyutu girin: ");
+                if (fgets(input, sizeof(input), stdin) == NULL) {
+                    printf("Yeni boyut okunamadi!\n");
+                    break;
+                }
+                int new_size = atoi(input);
+                if (fs_truncate(filename, new_size) >= 0) {
+                    log_operation("DOSYA_KIRPILDI", filename);
+                    printf("\"%s\" dosyasi basariyla %d byte'a kirpildi.\n", filename, new_size);
+                } else
+                    printf("\"%s\" dosyasi kirpilamadi!\n", filename);
+                break;
+            }
+            case 11: {
+                printf("Dosya kopyalama secildi.\n");
+                fs_ls(false);
+
+                if (!get_filename("Kopyalanacak dosya adini girin: ", filename)) break;
+                if (!get_filename("Yeni dosya adini girin: ", filename2)) break;
+                if (fs_copy(filename, filename2) >= 0) {
+                    log_operation("DOSYA_KOPYALANDI", filename);
+                    printf("\"%s\" dosyasi \"%s\" olarak basariyla kopyalandi.\n", filename, filename2);
+                } else
+                    printf("\"%s\" dosyasi kopyalanamadi!\n", filename);
+                break;
+            }
+            case 12: {
+                printf("Dosya tasima secildi.\n");
+
+                if (!get_filename("Tasinacak dosya adini girin: ", filename)) break;
+                if (!get_filename("Hedef dosya adini girin: ", filename2)) break;
+
+                if (fs_mv(filename, filename2) >= 0) {
+                    log_operation("DOSYA_TASINDI", filename);
+                    printf("\"%s\" dosyasi \"%s\" olarak basariyla tasindi.\n", filename, filename2);
+                } else
+                    printf("\"%s\" dosyasi tasinamadi!\n", filename);
+
+                break;
+            }
+            case 13: {
+                printf("Dosya karsilastirma secildi.\n");
+                fs_ls(false);
+
+                if (!get_filename("Birinci dosya adini girin: ", filename)) break;
+                if (!get_filename("Ikinci dosya adini girin: ", filename2)) break;
+
+                int result = fs_diff(filename, filename2);
+                if (result >= 0) {
+                    char details[FILENAME_LEN * 2 + 5];
+                    snprintf(details, sizeof(details), "%s ve %s", filename, filename2);
+                    log_operation("DOSYALAR_KARSILASTIRILDI", details);
+                } else {
+                    printf("Dosya karsilastirma islemi basarisiz oldu!\n");
+                }
+
+                break;
+            }
+            case 14: {
+                printf("Disk uzerindeki bos alanlari birlestirme secildi.\n");
+                if (!(fs_defragment() >= 0))
+                    printf("Disk uzerindeki bos alanlar birlestirilemedi!\n");
+                else
+                    log_operation("DISK_BIRLESTIRILDI", NULL);
+
+                break;
+            }
+            case 15: {
+                printf("Disk yedekleme secildi.\n");
+                if (!get_filename("Yedek dosya adini girin: ", filename)) break;
+
+                if (!(fs_backup(filename) >= 0))
+                    printf("Disk yedeklenemedi!\n");
+                else
+                    log_operation("DISK_YEDEKLENDI", NULL);
+
+                break;
+            }
+            case 16: {
+                printf("Disk yedegini geri yukleme secildi.\n");
+                if (!get_filename("Geri yuklenecek yedek dosya adini girin: ", filename)) break;
+                if (!(fs_restore(filename) >= 0))
+                    printf("Disk geri yuklenemedi!\n");
+                else
+                    log_operation("DISK_GERI_YUKLENDI", NULL);
+                break;
+            }
+            case 17: {
+                fs_log();
+                break;
+            }
+            case 18:
+                printf("Cikis yapiliyor...\n");
+                log_operation("CIKIS_YAPILDI", NULL);
+                break;
+            default:
+                printf("Gecersiz secim. Lutfen (1-16) arasi bir secim yapin.\n");
+                break;
+        }
+        is_first_run = 0;
+    } while (choice != 18);
+    return 0;
+}
 
 // Giriş bufferını temizlemek için bir fonksiyon
 void clear_input_buffer() {
@@ -25,133 +405,22 @@ int wait_for_user_input() {
     return ch;
 }
 
-int main() {
-    int choice;
-    int is_first_run = 1; // İlk çalışma olup olmadığını kontrol etmek için bayrak
-    char input[4];        // Kullanıcı girişini geçici olarak saklamak için
+// Kullanıcıdan dosya adını alır ve geçerli olup olmadığını kontrol eder
+bool get_filename(const char* prompt, char* filename) {
+    printf("%s", prompt);
 
-    do {
-        if (!is_first_run) { // Eğer ilk çalışma değilse
-            printf("\nDevam etmek icin lutfen bir tusa basin...");
-            wait_for_user_input(); // Herhangi bir tuşa basılmasını bekle
-            printf("\n");
-        }
+    if (fgets(filename, FILENAME_LEN, stdin) == NULL) {
+        printf("Dosya adi okunamadi!\n");
+        return 0;
+    }
 
-        system("clear");
-        printf("             Dosya Sistemi Menusu\n");
-        puts("==============================================");
-        printf(" 1. Dosya olustur\n");
-        printf(" 2. Dosya sil\n");
-        printf(" 3. Dosyaya veri yaz\n");
-        printf(" 4. Dosyadan veri oku\n");
-        printf(" 5. Dosyalari listele\n");
-        printf(" 6. Diske format at\n");
-        printf(" 7. Dosya ismini degistir\n");
-        printf(" 8. Dosya boyutunu goster\n");
-        printf(" 9. Dosya sonuna veri ekle\n");
-        printf("10. Dosyayi kirp\n");
-        printf("11. Dosya kopyala\n");
-        printf("12. Dosyayi tasi\n");
-        printf("13. Disk uzerindeki bos alanlari birlestir\n");
-        printf("14. Diski yedekle\n");
-        printf("15. Varolan disk yedegini geri yukle\n");
-        printf("16. Cikis\n");
-        puts("==============================================");
-        printf("Seciminizi girin: ");
+    size_t len = strlen(filename);
+    if (len > 0 && filename[len - 1] == '\n') filename[len - 1] = '\0';
 
-        // Kullanıcı girişini metin olarak al
-        if (fgets(input, sizeof(input), stdin) == NULL) {
-            system("clear");
-            return 0;
-        }
+    if (strlen(filename) == 0) {
+        printf("Gecersiz dosya adi! Dosya adi bos olamaz.\n");
+        return 0;
+    }
 
-        // fgets'in sonuna eklediği satır sonu karakterini kaldır
-        size_t len = strlen(input);
-        int newline_found = 0;
-
-        if (len > 0 && input[len - 1] == '\n') {
-            input[len - 1] = '\0';
-            newline_found = 1; // Newline bulundu ve kaldırıldı
-        }
-
-        // Eğer newline bulunamazsa, giriş bufferında hala karakter var demektir
-        if (!newline_found) clear_input_buffer();
-
-        // Giriş sadece sayılardan mı oluşuyor kontrol et
-        int is_valid = 1;
-        for (int i = 0; input[i] != '\0'; i++) {
-            if (input[i] < '0' || input[i] > '9') {
-                is_valid = 0;
-                break;
-            }
-        }
-
-        if (!is_valid) {
-            system("clear");
-            printf("Gecersiz secim. Lütfen sadece bir sayi girin.\n");
-            choice = 0;
-            is_first_run = 0;
-            continue;
-        }
-
-        // Geçerli bir sayı olduğu için şimdi int'e çevir
-        choice = atoi(input);
-        system("clear");
-        switch (choice) {
-            case 1:
-                printf("Dosya olusturma secildi.\n");
-                break;
-            case 2:
-                printf("Dosya silme secildi.\n");
-                break;
-            case 3:
-                printf("Dosyaya veri yazma secildi.\n");
-                break;
-            case 4:
-                printf("Dosyadan veri okuma secildi.\n");
-                break;
-            case 5:
-                printf("Dosyaları listeleme secildi.\n");
-                break;
-            case 6:
-                printf("Diske format atma secildi.\n");
-                break;
-            case 7:
-                printf("Dosya ismini degistirme secildi.\n");
-                break;
-            case 8:
-                printf("Dosya boyutunu gosterme secildi.\n");
-                break;
-            case 9:
-                printf("Dosya sonuna veri ekleme secildi.\n");
-                break;
-            case 10:
-                printf("Dosya kirpma secildi\n");
-                break;
-            case 11:
-                printf("Dosya kopyalama secildi.\n");
-                break;
-            case 12:
-                printf("Dosya tasima secildi\n");
-                break;
-            case 13:
-                printf("Disk uzerindeki bos alanlari birlestirme secildi.\n");
-                break;
-            case 14:
-                printf("Disk yedekleme secildi.\n");
-                break;
-            case 15:
-                printf("Disk yedegini geri yukleme secildi.\n");
-                break;
-            case 16:
-                printf("Cikis yapiliyor...\n");
-                break;
-            default:
-                printf("Gecersiz secim. Lutfen (1-16) arasi bir secim yapin.\n");
-                break;
-        }
-        is_first_run = 0;
-    } while (choice != 16);
-
-    return 0;
+    return 1;
 }

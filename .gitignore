@@ -2,3 +2,5 @@
 *.o
 *.obj
 simplefs
+disk.sim
+disk.log

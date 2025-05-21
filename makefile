@@ -1,12 +1,12 @@
-all: simplefs run
+all: clean simplefs run
 
-simplefs:
+simplefs: fs.c main.c
 	gcc -c fs.c
 	gcc -c main.c
 	gcc -o simplefs main.o fs.o
 
-run:
+run: simplefs
 	./simplefs
 
 clean:
-	rm -f *.o simplefs disk.sim
+	rm -f *.o simplefs

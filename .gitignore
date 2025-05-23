@@ -1,6 +1,7 @@
 *.obsolete
 *.o
 *.obj
+*.json
 simplefs
 disk.sim
 disk.log

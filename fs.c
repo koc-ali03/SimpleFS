@@ -15,13 +15,13 @@ static int log_fd = -1;
 // disk.sim içinden metadatayı al, hafızaya yükle
 static int load_metadata() {
     lseek(disk_fd, 0, SEEK_SET);
-    return read(disk_fd, file_table, sizeof(file_table));
+    return (int) read(disk_fd, file_table, sizeof(file_table));
 }
 
 // Hafızada tutulan metadatayı disk.sim içine kaydet
 static int save_metadata() {
     lseek(disk_fd, 0, SEEK_SET);
-    return write(disk_fd, file_table, sizeof(file_table));
+    return (int) write(disk_fd, file_table, sizeof(file_table));
 }
 
 // Log sistemini başlat
@@ -150,7 +150,7 @@ int fs_read(const char* filename, int offset, int size, char* buffer) {
                 return -1;
             }
             lseek(disk_fd, file_table[i].start_block + offset, SEEK_SET);
-            return read(disk_fd, buffer, size);
+            return (int) read(disk_fd, buffer, size);
         }
     }
     write(STDOUT_FILENO, "Dosya bulunamadi: ", 19);
@@ -331,7 +331,7 @@ int fs_defragment() {
         return 0;
     }
 
-    // Gecici dosya tablosu oluştur
+    // Geçici dosya tablosu oluştur
     FileEntry temp_table[MAX_FILES];
     memset(temp_table, 0, sizeof(temp_table));
 
@@ -470,7 +470,7 @@ int fs_backup(const char* backup_file) {
 
     lseek(disk_fd, 0, SEEK_SET);
 
-    while ((bytes_read = read(disk_fd, buffer, BLOCK_SIZE)) > 0) {
+    while ((bytes_read = (int) read(disk_fd, buffer, BLOCK_SIZE)) > 0) {
         if (write(backup_fd, buffer, bytes_read) != bytes_read) {
             write(STDOUT_FILENO, "Yedekleme sirasinda yazma hatasi olustu.\n", 42);
             close(backup_fd);
@@ -523,7 +523,7 @@ int fs_restore(const char* backup_file) {
     lseek(disk_fd, 0, SEEK_SET);
     lseek(backup_fd, 0, SEEK_SET);
 
-    while ((bytes_read = read(backup_fd, buffer, BLOCK_SIZE)) > 0) {
+    while ((bytes_read = (int) read(backup_fd, buffer, BLOCK_SIZE)) > 0) {
         if (write(disk_fd, buffer, bytes_read) != bytes_read) {
             write(STDOUT_FILENO, "Geri yukleme sirasinda yazma hatasi olustu.\n", 45);
             close(backup_fd);
@@ -671,14 +671,14 @@ int fs_log() {
     char buffer[BLOCK_SIZE];
     int bytes_read;
 
-    write(STDOUT_FILENO, "\n==============DOSYA SISTEMI ISLEM GUNLUGU===============\n\n", 60);
+    write(STDOUT_FILENO, "\n==============DOSYA SISTEMI ISLEM GUNLUGU==============\n\n", 59);
 
-    while ((bytes_read = read(read_log_fd, buffer, BLOCK_SIZE - 1)) > 0) {
+    while ((bytes_read = (int) read(read_log_fd, buffer, BLOCK_SIZE - 1)) > 0) {
         buffer[bytes_read] = '\0';
         write(STDOUT_FILENO, buffer, bytes_read);
     }
 
-    write(STDOUT_FILENO, "\n========================================================\n", 59);
+    write(STDOUT_FILENO, "\n=======================================================\n", 58);
 
     close(read_log_fd);
 
@@ -693,7 +693,9 @@ int fs_log() {
 void log_operation(const char* operation, const char* details) {
     if (log_fd >= 0) {
         time_t now = time(NULL);
-        struct tm* time_info = localtime(&now);
+        struct tm time_info_data;
+        struct tm* time_info = &time_info_data;
+        localtime_r(&now, time_info);
         char time_str[32];
         strftime(time_str, sizeof(time_str), "%d-%m-%Y %H:%M:%S", time_info);
 
